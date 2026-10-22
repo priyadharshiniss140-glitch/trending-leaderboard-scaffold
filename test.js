@@ -1,29 +1,39 @@
-// test.js — proves the leaderboard works.
-// Run with:  npm test   (run `npm run seed` first)
-//
-// The test: take a LOW-scored post, upvote it 50 times, then assert it now
-// appears in the top 10 of getTop(10). If it doesn't, your upvote/getTop is wrong.
+// test.js — prove the leaderboard ranks posts and returns their metadata.
+// Run with: npm test (run npm run seed first).
 
+import assert from "node:assert/strict";
 import { upvote, getTop, redis } from "./leaderboard.js";
 
 async function run() {
-  const target = "post:50"; // any seeded post id
+  const target = "post:50";
 
-  // Upvote the target 50 times.
-  for (let i = 0; i < 50; i++) {
-    // TODO: await upvote(target);
+  try {
+    // Raise a low-scored post 50 times; every ZINCRBY is atomic.
+    for (let i = 0; i < 50; i++) {
+      await upvote(target);
+    }
+
+    const top = await getTop(10);
+    console.log("Top 10:");
+    top.forEach((post, i) => {
+      console.log(
+        `  #${i + 1}  ${post.id}  score=${post.score}  ${post.title} (${post.author})`,
+      );
+    });
+
+    const targetRow = top.find((post) => post.id === target);
+    assert.ok(targetRow, `${target} should reach the top 10 after 50 upvotes`);
+    assert.equal(targetRow.title, "Post number 50");
+    assert.equal(targetRow.author, "@user50");
+    assert.ok(Number(targetRow.score) >= 50);
+
+    console.log(`\nPASS ✅  ${target} reached the top 10`);
+  } catch (error) {
+    console.error(error);
+    process.exitCode = 1;
+  } finally {
+    await redis.quit();
   }
-
-  // Fetch the top 10 WITH metadata.
-  const top = await getTop(10);
-  console.log("Top 10:");
-  top.forEach((p, i) => console.log(`  #${i + 1}  ${p.id}  score=${p.score}  ${p.title} (${p.author})`));
-
-  const madeIt = top.some((p) => p.id === target);
-  console.log(madeIt ? `\nPASS ✅  ${target} reached the top 10` : `\nFAIL ❌  ${target} is NOT in the top 10`);
-
-  redis.disconnect();
-  process.exit(madeIt ? 0 : 1);
 }
 
 run();
